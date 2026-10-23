@@ -1,0 +1,89 @@
+{{/*
+Ingress for the orchestrator gateway (task-acceptor).
+
+Exposes task intake and reporting through the configured Traefik entrypoint.
+The routing host can differ from the public HTTPS worker origin when an
+external TLS terminator rewrites Host.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Chart.Name }}-orchestrator-gateway-ingress
+  namespace: {{ .Values.namespace }}
+  annotations:
+    {{- if eq .Values.gateway.ingress.tlsTermination "internal" }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- else }}
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    {{- end }}
+    traefik.ingress.kubernetes.io/service.method: ANY
+  labels:
+    app: {{ .Chart.Name }}
+    component: orchestrator-gateway
+    app.kubernetes.io/component: task-acceptor
+    app.k8s.io/managed-by: Helm
+spec:
+  {{- if eq .Values.gateway.ingress.tlsTermination "internal" }}
+  tls:
+    - hosts: [{{ .Values.gateway.ingress.host | quote }}]
+      secretName: {{ .Values.gateway.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.gateway.ingress.host }}
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Chart.Name }}-orchestrator-gateway
+                port:
+                  number: 8000
+{{- if and .Values.management.enabled .Values.management.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Chart.Name }}-management-ingress
+  namespace: {{ .Values.namespace }}
+  annotations:
+    {{- if eq .Values.management.ingress.tlsTermination "internal" }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- else }}
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    {{- end }}
+    traefik.ingress.kubernetes.io/service.method: ANY
+  labels:
+    app: {{ .Chart.Name }}
+    component: management
+    app.k8s.io/managed-by: Helm
+spec:
+  {{- if eq .Values.management.ingress.tlsTermination "internal" }}
+  tls:
+    - hosts: [{{ .Values.management.ingress.host | quote }}]
+      secretName: {{ .Values.management.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.management.ingress.host | quote }}
+      http:
+        paths:
+          {{- $gatewayUrl := default (index .Values.supervisor.config "acceptor-url") .Values.management.gatewayUrl }}
+          {{- if eq (trimSuffix "/" $gatewayUrl) (trimSuffix "/" .Values.management.publicOrigin) }}
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Chart.Name }}-orchestrator-gateway
+                port:
+                  number: 8000
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Chart.Name }}-management
+                port:
+                  number: 8081
+{{- end }}

@@ -1,0 +1,181 @@
+# Orchestrator chart values: the LangGraph supervisor loop + always-on
+# task-acceptor gateway.
+
+# Namespace where this chart's resources are placed. Defaults to the release
+# namespace so `helm template` renders them in the correct namespace.
+# Override here when installing into a non-default namespace.
+namespace: "orchestrator"
+
+icon: ""
+
+githubAuth:
+  audience: ""
+  appId: ""
+  workflowPolicy:
+    ref: refs/heads/main
+    workflow: .github/workflows/drain.yaml
+    events: [ issues, workflow_dispatch ]
+  repositories: []
+
+# Supervisor (code-factory-supervisor) Deployment — the resident LangGraph loop.
+# Shared values for both the supervisor and task-acceptor resources.
+supervisor:
+  image: "ghcr.io/utopiklab/code-factory-supervisor:latest"
+  imagePullPolicy: Always
+  replicas: 1
+  labels:
+    app: orchestrator
+  # resource defaults (overridable via values)
+  cpuRequest: "500m"
+  cpuLimit: "2500m"
+  memory: "2Gi"
+  memoryLimit: "5Gi"
+  # Config consumed by supervisor loop + coder-worker (single source of truth).
+  config:
+    # Reachable HTTPS origin for the coder-worker's ACCEPTOR_URL, independent of
+    # gateway.ingress.host when an external TLS proxy rewrites Host.
+    acceptor-url: "https://code-factory.local"
+    allowed-base-branches: ""
+    reviewers: ""
+    judge-url: "http://llama-server-args-gpu1.inference.svc.cluster.local:8000/v1"
+    coder-url: "http://llama-server-args-gpu0.inference.svc.cluster.local:8000/v1"
+    judge-model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M"
+    coder-model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M"
+    acceptance-threshold: 0.8
+    max-total-attempts: 8
+    worker-parallelism: 1
+
+# Coder-worker (orchestrator-worker Job) image. Kept separate from the
+# supervisor image so the worker Job runs code-factory-worker — never
+# code-factory-supervisor (which is what a shared `orchestrator.image`
+# reference would resolve to).
+#
+# Worker pool config (see §2.1.2). worker-roles: ordered role mix per slot
+# (coder/refactor/test) — matches the supervisor's role_assignment() mix
+# (Includes 'refactor' so the mix is complete; worker-count is set at
+# runtime via the WORKER_COUNT env var). worker-model + worker-roles are
+# folded into this block so templates can reference .Values.worker.*
+# (the worker Job image + resource config).
+worker:
+  name: worker
+  image: "ghcr.io/utopiklab/code-factory-worker:latest"
+  imagePullPolicy: Always
+  labels:
+    app: orchestrator
+    component: worker
+  worker-roles:
+  - coder
+  - refactor
+  - test
+  worker-model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M"
+  coderUrl: ""
+  # Null enables native preparation only for the corresponding default router URL.
+  coderNativeDownload: null
+  judgeNativeDownload: null
+  judgeAcceptThreshold: 0.8
+  repoPolicies: {}
+
+# Gateway Deployment + Service — the always-on task-acceptor (:8000).
+# The gateway image is built from the Dockerfile in the non-Helm tree
+# (orchestrator/gateway/). The image reference is set at build/release time
+# (e.g. `docker buildx build`), exactly like the supervisor and coder-worker
+# images. Overridable via values.
+gateway:
+  transportMode: edge-tls
+  ingress:
+    host: "code-factory.local"
+    tlsTermination: internal
+    tlsSecretName: "orchestrator-gateway-tls"
+  taskCredentialTtlSeconds: 86400
+  taskJobTtlSecondsAfterFinished: 86400
+  image: "ghcr.io/utopiklab/code-factory-gateway:latest"
+  imagePullPolicy: Always
+  replicas: 1
+  persistence:
+    size: "1Gi"
+    storageClassName: ""
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+  labels:
+    app: orchestrator
+    component: gateway
+  # Gateway (task-acceptor) resource defaults. The gateway is a lightweight
+  # HTTP service, so it gets smaller CPU/memory limits than the supervisor's
+  # LangGraph loop (supervisor.cpuRequest = 500m/2Gi).
+
+  config:
+    cpuRequest: "100m"
+    cpuLimit: "250m"
+    memory: "256Mi"
+    memoryLimit: "512Mi"
+
+# Shared pull secret applied to all containers.
+imagePullSecrets:
+- name: code-factory-ghcr-pull
+
+# The `orchestrator-config` ConfigMap key/values consumed by the supervisor
+# loop and the task-acceptor. Mirrors the parent chart's orchestrator.config.
+# Shared by the supervisor loop and the coder-worker Job.
+
+# --- Observability / Prometheus (port-scraping) ---
+# Metrics are exposed on :9000 (prometheus_client /metrics) on every component
+# (gateway, supervisor, worker). No second Prometheus/Grafana stack is added;
+# this chart only publishes metrics NodePort Services so the parent stack's
+# Prometheus (truenas.utopiklab.lan:9090) can scrape them. Metric names use
+# component-specific prefixes; see docs/operations/deployment-summary.md.
+metrics:
+  enabled: true
+  port: 9000
+  external:
+    gatewayNodePort: 30900
+    supervisorNodePort: 30901
+    workerNodePort: 30902
+
+agentCatalog:
+  version: "1"
+
+management:
+  enabled: false
+  github:
+    clientId: ""
+  authMode: admin
+  admin:
+    username: admin
+  image: "ghcr.io/utopiklab/code-factory-management:latest"
+  imagePullPolicy: IfNotPresent
+  publicOrigin: ""
+  gatewayUrl: ""
+  ingress:
+    enabled: false
+    host: ""
+    tlsTermination: internal
+    tlsSecretName: ""
+  oidc:
+    issuer: ""
+    audience: ""
+    jwksUrl: ""
+    allowedSubjects: []
+
+# References to pre-provisioned Kubernetes Secrets. No secret values belong in Helm.
+secretRefs:
+  githubAppKey:
+    name: code-factory-github-app-key
+    key: private-key.pem
+  managementServiceToken:
+    name: code-factory-management-service
+    key: token
+  supervisorServiceToken:
+    name: code-factory-supervisor-auth
+    key: token
+  openaiApiKey:
+    name: code-factory-openai-api-key
+    key: api-key
+  coderApiKey:
+    name: code-factory-coder-api-key
+    key: api-key
+  managementAdminPassword:
+    name: code-factory-management-admin-password
+    key: password
+  managementGithubClientSecret:
+    name: code-factory-management-github-client-secret
+    key: client-secret

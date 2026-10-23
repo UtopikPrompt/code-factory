@@ -1,0 +1,132 @@
+{{- if .Values.management.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-management
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+      component: management
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+        component: management
+      annotations:
+        code-factory/config-hash: {{ include "orchestrator.agentCatalogHash" . | quote }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      containers:
+        - name: management
+          image: {{ required "management.image is required" .Values.management.image | quote }}
+          imagePullPolicy: {{ .Values.management.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: GITHUB_REPOSITORY_POLICIES
+              value: {{ .Values.githubAuth.repositories | toJson | quote }}
+            - name: MANAGEMENT_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRefs.managementServiceToken.name | quote }}
+                  key: {{ .Values.secretRefs.managementServiceToken.key | quote }}
+            - name: MANAGEMENT_GATEWAY_URL
+              value: {{ default (index .Values.supervisor.config "acceptor-url") .Values.management.gatewayUrl | quote }}
+            - name: MANAGEMENT_PUBLIC_ORIGIN
+              value: {{ .Values.management.publicOrigin | quote }}
+            {{- if .Values.management.github.clientId }}
+            - name: MANAGEMENT_GITHUB_CLIENT_ID
+              value: {{ .Values.management.github.clientId | quote }}
+            - name: MANAGEMENT_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRefs.managementGithubClientSecret.name | default "code-factory-management-github-client-secret" | quote }}
+                  key: {{ .Values.secretRefs.managementGithubClientSecret.key | quote }}
+                  optional: true
+            {{- end }}
+            - name: MANAGEMENT_AUTH_MODE
+              value: {{ .Values.management.authMode | quote }}
+            {{- if eq .Values.management.authMode "admin" }}
+            - name: MANAGEMENT_ADMIN_USERNAME
+              value: {{ .Values.management.admin.username | quote }}
+            - name: MANAGEMENT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRefs.managementAdminPassword.name | quote }}
+                  key: {{ .Values.secretRefs.managementAdminPassword.key | quote }}
+            {{- else }}
+            - name: MANAGEMENT_OIDC_ISSUER
+              value: {{ .Values.management.oidc.issuer | quote }}
+            - name: MANAGEMENT_OIDC_AUDIENCE
+              value: {{ .Values.management.oidc.audience | quote }}
+            - name: MANAGEMENT_OIDC_JWKS_URL
+              value: {{ .Values.management.oidc.jwksUrl | quote }}
+            - name: MANAGEMENT_ALLOWED_SUBJECTS
+              value: {{ join "," .Values.management.oidc.allowedSubjects | quote }}
+            {{- end }}
+            - name: MANAGEMENT_RUNTIME_CONFIG_FILE
+              value: /etc/runtime/runtime-config.json
+            - name: MANAGEMENT_CONFIG_HASH
+              value: {{ include "orchestrator.agentCatalogHash" . | quote }}
+          volumeMounts:
+            - name: runtime
+              mountPath: /etc/runtime
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: runtime
+          configMap:
+            name: {{ .Chart.Name }}-agent-catalog-{{ include "orchestrator.agentCatalogHash" . | trunc 12 }}
+            items:
+              - key: runtime-config.json
+                path: runtime-config.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}-management
+  namespace: {{ .Values.namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: orchestrator
+    component: management
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+{{- end }}
