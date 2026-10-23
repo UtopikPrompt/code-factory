@@ -14,7 +14,7 @@ Orchestrator image for the autonomous LangGraph supervisor loop.
 ## Build
 ```bash
 docker build -f orchestrator/supervisor/Dockerfile \
-	-t ghcr.io/utopiklab/code-factory-supervisor:$TAG \
+	-t ghcr.io/utopikprompt/codefactory-supervisor:$TAG \
 	orchestrator/supervisor
 ```
 

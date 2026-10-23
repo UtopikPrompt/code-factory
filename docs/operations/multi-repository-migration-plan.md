@@ -25,7 +25,7 @@ Local inspection establishes two charts, four application Docker build contexts,
 and GitHub Actions CI. Both chart versions are currently `0.1.0`. Application
 defaults use `latest`; inference uses an upstream llama.cpp image digest. The
 inference dependency is NVIDIA device-plugin `0.20.1`. CI builds application
-images on PRs and publishes on main pushes to `ghcr.io/utopiklab/code-factory-*`
+images on PRs and publishes on main pushes to `ghcr.io/utopikprompt/codefactory-*`
 with a seven-character commit tag and `latest`; it does not publish charts.
 Chart `sources` still name `UtopikLab/code-factory`, not the agreed App URL.
 

@@ -36,7 +36,7 @@ spec:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       containers:
         - name: gateway
-          image: {{ .Values.gateway.image | default "ghcr.io/utopikprompt/code-factory-gateway:latest" }}
+          image: {{ .Values.gateway.image | default "ghcr.io/utopikprompt/codefactory-gateway:latest" }}
           imagePullPolicy: {{ .Values.gateway.imagePullPolicy | default "Always" }}
           ports:
             - name: gateway

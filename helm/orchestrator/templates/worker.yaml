@@ -68,7 +68,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: coder
-          image: {{ .Values.worker.image | default "ghcr.io/utopikprompt/code-factory-worker:latest" }}
+          image: {{ .Values.worker.image | default "ghcr.io/utopikprompt/codefactory-worker:latest" }}
           imagePullPolicy: Always
           volumeMounts:
             - name: workspace

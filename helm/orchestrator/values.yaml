@@ -20,7 +20,7 @@ githubAuth:
 # Supervisor (code-factory-supervisor) Deployment — the resident LangGraph loop.
 # Shared values for both the supervisor and task-acceptor resources.
 supervisor:
-  image: "ghcr.io/utopikprompt/code-factory-supervisor:latest"
+  image: "ghcr.io/utopikprompt/codefactory-supervisor:latest"
   imagePullPolicy: Always
   replicas: 1
   labels:
@@ -58,7 +58,7 @@ supervisor:
 # (the worker Job image + resource config).
 worker:
   name: worker
-  image: "ghcr.io/utopikprompt/code-factory-worker:latest"
+  image: "ghcr.io/utopikprompt/codefactory-worker:latest"
   imagePullPolicy: Always
   labels:
     app: orchestrator
@@ -88,7 +88,7 @@ gateway:
     tlsSecretName: "orchestrator-gateway-tls"
   taskCredentialTtlSeconds: 86400
   taskJobTtlSecondsAfterFinished: 86400
-  image: "ghcr.io/utopikprompt/code-factory-gateway:latest"
+  image: "ghcr.io/utopikprompt/codefactory-gateway:latest"
   imagePullPolicy: Always
   replicas: 1
   persistence:
@@ -141,7 +141,7 @@ management:
   authMode: admin
   admin:
     username: admin
-  image: "ghcr.io/utopikprompt/code-factory-management:latest"
+  image: "ghcr.io/utopikprompt/codefactory-management:latest"
   imagePullPolicy: IfNotPresent
   publicOrigin: ""
   gatewayUrl: ""
