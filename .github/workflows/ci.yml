@@ -180,8 +180,8 @@ jobs:
           context: ./orchestrator/${{ matrix.service }}
           push: ${{ env.PUBLISH_IMAGES == 'true' }}
           tags: |
-            ${{ env.REGISTRY }}/utopikprompt/code-factory-${{ matrix.service }}:${{ needs.set-image-tag.outputs.tag }}
-            ${{ env.REGISTRY }}/utopikprompt/code-factory-${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/utopikprompt/codefactory-${{ matrix.service }}:${{ needs.set-image-tag.outputs.tag }}
+            ${{ env.REGISTRY }}/utopikprompt/codefactory-${{ matrix.service }}:latest
 
   summary:
     name: CI Summary
@@ -215,7 +215,7 @@ jobs:
                 printf 'Images built for validation only; nothing was published:\n\n'
               fi
               for service in supervisor worker gateway management; do
-                printf -- '- `%s/utopikprompt/code-factory-%s:%s`\n' "$REGISTRY" "$service" "$IMAGE_TAG"
+                printf -- '- `%s/utopikprompt/codefactory-%s:%s`\n' "$REGISTRY" "$service" "$IMAGE_TAG"
               done
             else
               printf 'Image builds did not all succeed. Check individual matrix jobs before deploying.\n'
