@@ -41,7 +41,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: supervisor
-          image: {{ .Values.supervisor.image | default "ghcr.io/utopikprompt/code-factory-supervisor:latest" }}
+          image: {{ .Values.supervisor.image | default "ghcr.io/utopikprompt/codefactory-supervisor:latest" }}
           imagePullPolicy: Always
           ports:
             - name: metrics

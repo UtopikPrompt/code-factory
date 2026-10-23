@@ -144,9 +144,20 @@ jobs:
       - name: Lint and render orchestrator chart
         run: |
           helm lint helm/orchestrator --values helm/orchestrator/example.values.yaml
-          helm template orchestrator helm/orchestrator \
+          rendered="$(helm template orchestrator helm/orchestrator \
             --namespace orchestrator \
-            --values helm/orchestrator/example.values.yaml
+            --values helm/orchestrator/example.values.yaml \
+            --set management.enabled=true)"
+          for image in \
+            ghcr.io/utopikprompt/codefactory-gateway:latest \
+            ghcr.io/utopikprompt/codefactory-management:latest \
+            ghcr.io/utopikprompt/codefactory-supervisor:latest \
+            ghcr.io/utopikprompt/codefactory-worker:latest; do
+            grep -Fq "$image" <<< "$rendered" || {
+              echo "Expected image missing from chart render: $image" >&2
+              exit 1
+            }
+          done
 
   build-images:
     needs: [lint, test, chart-validation, set-image-tag]
