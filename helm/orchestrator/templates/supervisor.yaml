@@ -1,0 +1,172 @@
+{{/*
+Supervisor Deployment for the orchestrator workload (LangGraph loop).
+*/}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-supervisor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: orchestrator
+    component: supervisor
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    created-by: helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+      component: supervisor
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+        component: supervisor
+    spec:
+      serviceAccountName: {{ .Chart.Name }}-supervisor
+      automountServiceAccountToken: true
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: orchestrator
+                  component: gateway
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsUser: 1001
+        runAsNonRoot: true
+        fsGroup: 1001
+      containers:
+        - name: supervisor
+          image: {{ .Values.supervisor.image | default "ghcr.io/utopiklab/code-factory-supervisor:latest" }}
+          imagePullPolicy: Always
+          ports:
+            - name: metrics
+              containerPort: 9000
+          volumeMounts:
+            - name: task-state
+              mountPath: /data/tasks
+            - name: agent-catalog
+              mountPath: /etc/code-factory/agent-catalog
+              readOnly: true
+          resources:
+            requests:
+              cpu: {{ .Values.supervisor.config.cpuRequest | default "500m" }}
+              memory: {{ .Values.supervisor.config.memory | default "2Gi" }}
+            limits:
+              cpu: {{ .Values.supervisor.config.cpuLimit | default "2500m" }}
+              memory: {{ .Values.supervisor.config.memoryLimit | default "5Gi" }}
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRefs.openaiApiKey.name | default "code-factory-openai-api-key" | quote }}
+                  key: {{ .Values.secretRefs.openaiApiKey.key | quote }}
+                  optional: true
+            - name: ACCEPTOR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Chart.Name }}-config
+                  key: acceptor-url
+            - name: JUDGE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Chart.Name }}-config
+                  key: judge-url
+            - name: JUDGE_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Chart.Name }}-config
+                  key: judge-model
+            - name: CODER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Chart.Name }}-config
+                  key: coder-url
+            - name: CODER_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Chart.Name }}-config
+                  key: coder-model
+            - name: ACCEPTANCE_THRESHOLD
+              value: {{ index .Values.supervisor.config "acceptance-threshold" | default 0.8 | quote }}
+            - name: PR_ALLOWED_BASE_BRANCHES
+              value: {{ index .Values.supervisor.config "allowed-base-branches" | quote }}
+            - name: PR_REVIEWERS
+              value: {{ .Values.supervisor.config.reviewers | quote }}
+            - name: TASK_DB_PATH
+              value: /data/tasks/tasks.sqlite3
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: AGENT_CONFIG_VERSION
+              value: {{ .Values.agentCatalog.version | default "1" | quote }}
+            - name: AGENT_CONFIG_HASH
+              value: {{ include "orchestrator.agentCatalogHash" . | quote }}
+            - name: AGENT_CATALOG_NAME_PREFIX
+              value: {{ printf "%s-agent-catalog-" .Chart.Name | quote }}
+            - name: SUPERVISOR_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRefs.supervisorServiceToken.name | quote }}
+                  key: {{ .Values.secretRefs.supervisorServiceToken.key | quote }}
+            - name: WORKER_JOB_TEMPLATE
+              value: {{ printf "%s-worker" .Chart.Name | quote }}
+            - name: TASK_JOB_TTL_SECONDS_AFTER_FINISHED
+              value: {{ .Values.gateway.taskJobTtlSecondsAfterFinished | quote }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            periodSeconds: 15
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      volumes:
+        - name: task-state
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-task-state" .Chart.Name) .Values.gateway.persistence.existingClaim }}
+        - name: agent-catalog
+          configMap:
+            name: {{ .Chart.Name }}-agent-catalog-{{ include "orchestrator.agentCatalogHash" . | trunc 12 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Chart.Name }}-supervisor
+  namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Chart.Name }}-supervisor
+  namespace: {{ .Values.namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Chart.Name }}-supervisor
+  namespace: {{ .Values.namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Chart.Name }}-supervisor
+    namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Chart.Name }}-supervisor

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook
+# Runs the test suite and linting before every commit.
+# A failed test suite aborts the commit, so a broken build can
+# never be committed. Linting runs when a linter is available;
+# it is best-effort (does not block) when ruff is not installed,
+# and is enforced when ruff is present.
+
+set -euo pipefail
+
+python=python3
+if [[ -x .venv/bin/python3 ]]; then
+  python=.venv/bin/python3
+fi
+
+# Run the full test suite.
+"$python" -m pytest
+
+# Lint. Prefer ruff; fall back to pyflakes when ruff is unavailable.
+# ruff may be a standalone binary on PATH or a Python module (python3 -m ruff),
+# so detect it via either mechanism.
+if command -v ruff >/dev/null 2>&1 || "$python" -m ruff >/dev/null 2>&1; then
+  if command -v ruff >/dev/null 2>&1; then
+    ruff check .
+  else
+    "$python" -m ruff check .
+  fi
+elif command -v pyflakes >/dev/null 2>&1; then
+  "$python" -m pyflakes . || true
+fi
