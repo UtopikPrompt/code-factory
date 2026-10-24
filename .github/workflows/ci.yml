@@ -244,7 +244,10 @@ jobs:
           push: ${{ env.PUBLISH_IMAGES == 'true' }}
           tags: |
             ${{ env.REGISTRY }}/utopikprompt/codefactory-${{ matrix.service }}:${{ needs.set-image-tag.outputs.tag }}
+            ${{ env.REGISTRY }}/utopikprompt/codefactory-${{ matrix.service }}:${{ github.sha }}
             ${{ env.REGISTRY }}/utopikprompt/codefactory-${{ matrix.service }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
 
   summary:
     name: CI Summary
@@ -260,6 +263,7 @@ jobs:
           CHART_RESULT: ${{ needs.chart-validation.result }}
           BUILD_RESULT: ${{ needs.build-images.result }}
           IMAGE_TAG: ${{ needs.set-image-tag.outputs.tag }}
+          SOURCE_COMMIT: ${{ github.sha }}
         run: |
           {
             printf '## CI Overview\n\n'
@@ -273,7 +277,7 @@ jobs:
             printf '[Run logs and artifacts](%s/%s/actions/runs/%s)\n\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             if [[ "$BUILD_RESULT" == "success" ]]; then
               if [[ "$PUBLISH_IMAGES" == "true" ]]; then
-                printf 'Images published with tags `%s` and `latest`:\n\n' "$IMAGE_TAG"
+                printf 'Images published with short-SHA tag `%s`, full-commit tag `%s`, and `latest`:\n\n' "$IMAGE_TAG" "$SOURCE_COMMIT"
               else
                 printf 'Images built for validation only; nothing was published:\n\n'
               fi
